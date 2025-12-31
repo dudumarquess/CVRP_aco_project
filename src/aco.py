@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Callable, Dict, Any
 
 import numpy as np
 
 from .problem import CVRPProblem
 from .solution import Route, Solution
+
+Observer = Callable[[Dict[str, Any]], None]
 
 @dataclass
 class ACSParams:
@@ -23,9 +25,17 @@ class ACSParams:
     tau0: float = 0.01          # initial pheromone level
     
 class AntColony:
-    def __init__(self, problem: CVRPProblem, params: ACSParams):
+    def __init__(
+        self,
+        problem: CVRPProblem,
+        params: ACSParams,
+        observer: Optional[Observer] = None,
+        seed: int = 42,
+    ):
         self.problem = problem
         self.params = params
+        self.observer = observer
+        self.best_history: List[float] = []
         
         n = problem.n_nodes()
         
@@ -34,43 +44,57 @@ class AntColony:
         
         # initialize heuristic matrix (1/distance)
         self.eta = np.zeros((n, n), dtype=float)
-        with np.errstate(divide='ignore'):
+        with np.errstate(divide="ignore"):
             self.eta = 1.0 / problem.distance_matrix
             self.eta[np.isinf(self.eta)] = 0.0  # handle division by zero
-            
-        self.rng = np.random.default_rng(seed=42)  # for reproducibility
+
+        self.rng = np.random.default_rng(seed=seed)  # for reproducibility
         self.global_best: Optional[Solution] = None
         
     # Principal API
     
     def run(self) -> Solution:
-        """
-        Executes the ACS algorithm and returns the best found solution.
-        """
+        self.best_history = []
+
         for iteration in range(self.params.n_iterations):
             solutions: List[Solution] = []
-            
+
             for _ in range(self.params.n_ants):
                 sol = self._construct_solution()
-                
-                # we are going to change to local search after, for now just store
                 solutions.append(sol)
-                
+
             best_iteration = min(solutions, key=lambda s: s.total_cost(self.problem))
-            
-            if (self.global_best is None or best_iteration.total_cost(self.problem) < 
+
+            if (self.global_best is None or best_iteration.total_cost(self.problem) <
                 self.global_best.total_cost(self.problem)):
                 self.global_best = best_iteration
-                
+
             self._global_pheromone_update(self.global_best)
-            
+
+            best_it_cost = best_iteration.total_cost(self.problem)
+            best_glb_cost = self.global_best.total_cost(self.problem)
+            self.best_history.append(best_glb_cost)
+
+            if self.observer is not None:
+                self.observer({
+                    "type": "iteration_end",
+                    "iteration": iteration + 1,
+                    "best_iteration_cost": best_it_cost,
+                    "global_best_cost": best_glb_cost,
+                    "global_best_solution": self.global_best,  # snapshot
+                    # opcional: resumo do tau pra não mandar matriz gigante
+                    "tau_mean": float(self.tau.mean()),
+                    "tau_max": float(self.tau.max()),
+                })
+
             print(
                 f"- Iteration {iteration+1}/{self.params.n_iterations}, "
-                f"- Best iteration: {best_iteration.total_cost(self.problem):.2f}"
-                f"- Global best: {self.global_best.total_cost(self.problem):.2f}"
+                f"- Best iteration: {best_it_cost:.2f} "
+                f"- Global best: {best_glb_cost:.2f}"
             )
-            
-            return self.global_best
+
+        return self.global_best
+
         
         # Construction of the solution with capacity constraints
     def _construct_solution(self) -> Solution:
