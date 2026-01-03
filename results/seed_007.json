@@ -1,6 +1,11 @@
 {
+  "timestamp": "2026-01-03T21:47:33",
   "instance": "A-n32-k5",
+  "problem_file": "data/A-n32-k5.vrp",
+  "problem_sha1": "91183f27580320be2fe18bd8de130492ac51d2c3",
   "seed": 7,
+  "algorithm": "ACS",
+  "variant": "baseline",
   "params": {
     "n_ants": 10,
     "n_iterations": 30,
@@ -9,184 +14,199 @@
     "rho": 0.1,
     "xi": 0.1,
     "q0": 0.9,
-    "tau0": 0.01
+    "tau0": 0.01,
+    "candidate_list_size": 15
   },
-  "runtime_seconds": 0.0844360829796642,
+  "best_known": 784.0,
+  "gap_percent": 28.222063986406614,
+  "runtime_seconds": 0.07476499979384243,
   "history": [
     {
       "iteration": 1,
-      "best_iteration_cost": 1146.399631725379,
-      "global_best_cost": 1146.399631725379
+      "best_iteration_cost": 1058.2333824113866,
+      "global_best_cost": 1058.2333824113866
     },
     {
       "iteration": 2,
-      "best_iteration_cost": 1054.66549604029,
-      "global_best_cost": 1054.66549604029
+      "best_iteration_cost": 1047.9802526741335,
+      "global_best_cost": 1047.9802526741335
     },
     {
       "iteration": 3,
-      "best_iteration_cost": 1021.4545306827588,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1146.399631725379,
+      "global_best_cost": 1047.9802526741335
     },
     {
       "iteration": 4,
-      "best_iteration_cost": 1142.0663837889826,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1064.101294443833,
+      "global_best_cost": 1047.9802526741335
     },
     {
       "iteration": 5,
-      "best_iteration_cost": 1089.9977694905617,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1042.3299549352437,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 6,
-      "best_iteration_cost": 1034.1063210459974,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1102.468519794033,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 7,
-      "best_iteration_cost": 1129.524253121659,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1146.399631725379,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 8,
-      "best_iteration_cost": 1093.8402258087842,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1095.7238822598995,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 9,
       "best_iteration_cost": 1146.399631725379,
-      "global_best_cost": 1021.4545306827588
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 10,
-      "best_iteration_cost": 1146.399631725379,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1134.1906601956923,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 11,
-      "best_iteration_cost": 1120.3259792728459,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1081.8229434702996,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 12,
-      "best_iteration_cost": 1137.737763980425,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1142.4415675677017,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 13,
-      "best_iteration_cost": 1064.367533681586,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1146.399631725379,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 14,
-      "best_iteration_cost": 1095.0253292548175,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1143.8232799273287,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 15,
-      "best_iteration_cost": 1071.6865520194783,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1051.59412599281,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 16,
-      "best_iteration_cost": 1087.2266438782158,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1136.011082689357,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 17,
-      "best_iteration_cost": 1139.8719929856961,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1113.481826327426,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 18,
-      "best_iteration_cost": 1141.360677400393,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1146.399631725379,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 19,
-      "best_iteration_cost": 1113.950925000138,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1132.3176994274402,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 20,
-      "best_iteration_cost": 1131.1080937291795,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1134.1906601956923,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 21,
-      "best_iteration_cost": 1115.1434269718538,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1146.399631725379,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 22,
-      "best_iteration_cost": 1115.1434269718538,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1115.2121504074742,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 23,
-      "best_iteration_cost": 1115.1434269718538,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1146.399631725379,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 24,
-      "best_iteration_cost": 1146.399631725379,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1120.3259792728459,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 25,
-      "best_iteration_cost": 1084.785625692794,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1096.6178109439365,
+      "global_best_cost": 1042.3299549352437
     },
     {
       "iteration": 26,
-      "best_iteration_cost": 1090.3899592004095,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1038.6075019844386,
+      "global_best_cost": 1038.6075019844386
     },
     {
       "iteration": 27,
-      "best_iteration_cost": 1099.9677265230257,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1146.399631725379,
+      "global_best_cost": 1038.6075019844386
     },
     {
       "iteration": 28,
-      "best_iteration_cost": 1091.9627808676446,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1146.399631725379,
+      "global_best_cost": 1038.6075019844386
     },
     {
       "iteration": 29,
-      "best_iteration_cost": 1095.0253292548175,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1139.325260298914,
+      "global_best_cost": 1038.6075019844386
     },
     {
       "iteration": 30,
-      "best_iteration_cost": 1146.399631725379,
-      "global_best_cost": 1021.4545306827588
+      "best_iteration_cost": 1005.2609816534278,
+      "global_best_cost": 1005.2609816534278
     }
   ],
   "final": {
-    "best_cost": 1021.4545306827588,
+    "best_cost": 1005.2609816534278,
     "n_routes": 5,
     "routes": [
       [
         0,
-        27,
-        24,
-        14,
-        26,
         30,
+        26,
         16,
+        12,
         1,
+        24,
+        29,
         0
       ],
       [
         0,
-        12,
-        7,
         13,
         21,
         31,
         19,
+        17,
+        3,
+        23,
+        8,
+        0
+      ],
+      [
+        0,
+        6,
+        2,
+        28,
+        4,
+        11,
+        9,
         18,
         0
       ],
@@ -197,28 +217,50 @@
         25,
         10,
         15,
-        29,
         22,
-        9,
-        8,
+        27,
+        14,
         0
       ],
       [
         0,
-        6,
-        3,
-        2,
-        23,
-        28,
-        4,
-        11,
-        0
-      ],
-      [
-        0,
-        17,
+        7,
         0
       ]
-    ]
+    ],
+    "best_history": [
+      1058.2333824113866,
+      1047.9802526741335,
+      1047.9802526741335,
+      1047.9802526741335,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1042.3299549352437,
+      1038.6075019844386,
+      1038.6075019844386,
+      1038.6075019844386,
+      1038.6075019844386,
+      1005.2609816534278
+    ],
+    "best_iter_found": 30,
+    "stagnation_iters": 0
   }
 }

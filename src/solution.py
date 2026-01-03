@@ -77,5 +77,40 @@ class Solution:
             return False    
         
         return True
-       
-        
+
+
+def _route_cost(nodes: List[int], distance_matrix) -> float:
+    cost = 0.0
+    for i in range(len(nodes) - 1):
+        cost += float(distance_matrix[nodes[i], nodes[i + 1]])
+    return cost
+
+
+def two_opt_route(route: Route, problem: CVRPProblem) -> Route:
+    """Best-improvement 2-opt for a single route (keeps feasibility)."""
+    nodes = list(route.nodes)
+    best_cost = _route_cost(nodes, problem.distance_matrix)
+    improved = True
+
+    while improved:
+        improved = False
+        best_nodes = nodes
+        for i in range(1, len(nodes) - 2):
+            for k in range(i + 1, len(nodes) - 1):
+                candidate = nodes[:i] + nodes[i : k + 1][::-1] + nodes[k + 1 :]
+                new_cost = _route_cost(candidate, problem.distance_matrix)
+                if new_cost + 1e-9 < best_cost:
+                    best_cost = new_cost
+                    best_nodes = candidate
+                    improved = True
+        nodes = best_nodes
+
+    return Route(nodes=nodes)
+
+
+def two_opt_solution(solution: Solution, problem: CVRPProblem) -> Solution:
+    """Applies 2-opt independently to each route in the solution."""
+    improved_routes = []
+    for route in solution.routes:
+        improved_routes.append(two_opt_route(route, problem))
+    return Solution(routes=improved_routes)
