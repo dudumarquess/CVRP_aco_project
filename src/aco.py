@@ -24,6 +24,11 @@ class ACSParams:
     q0: float = 0.9             # probability of exploitation vs exploration
     tau0: float = 0.01          # initial pheromone level
     candidate_list_size: int = 15  # k-nearest neighbors considered when selecting next node
+    use_q0_schedule: bool = False
+    q0_min: float = 0.7
+    q0_max: float = 0.95
+    use_rho_adaptive: bool = False
+    rho_max: float = 0.2  # upper bound for adaptive evaporation
     
 class AntColony:
     def __init__(
@@ -47,6 +52,9 @@ class AntColony:
         self.local_search_mode = local_search_mode
         self.adaptive_threshold = adaptive_threshold
         self.adaptive_top_m = adaptive_top_m
+        self.ls_stats: Dict[str, float | int] = {}
+        self.q0_current = params.q0
+        self.rho_current = params.rho
         
         n = problem.n_nodes()
         
@@ -80,8 +88,26 @@ class AntColony:
         self.best_history = []
         self.pheromone_history = []
         stagnation_counter = 0
+        adaptive_widenings = 0
+        total_ls_applied = 0
+        stagnation_iterations = 0
+        max_stagnation = 0
 
         for iteration in range(self.params.n_iterations):
+            # adapt q0 and rho at iteration start
+            if self.params.use_q0_schedule:
+                frac = 0.0 if self.params.n_iterations <= 1 else iteration / (self.params.n_iterations - 1)
+                self.q0_current = self.params.q0_min + (self.params.q0_max - self.params.q0_min) * frac
+            else:
+                self.q0_current = self.params.q0
+
+            if self.params.use_rho_adaptive:
+                thr = max(1, self.adaptive_threshold)
+                scale = min(1.0, stagnation_counter / thr)
+                self.rho_current = self.params.rho + (self.params.rho_max - self.params.rho) * scale
+            else:
+                self.rho_current = self.params.rho
+
             solutions: List[Solution] = []
             solutions_costs: List[float] = []
 
@@ -97,13 +123,25 @@ class AntColony:
                     self.local_search_mode == "adaptive"
                     and stagnation_counter >= self.adaptive_threshold
                 )
-                top_m = self.adaptive_top_m if apply_all else 1
-                top_m = max(1, min(top_m, len(sorted_idx)))
+                ls_top_m_applied = self.adaptive_top_m if apply_all else 1
+                ls_top_m_applied = max(1, min(ls_top_m_applied, len(sorted_idx)))
 
-                for idx in sorted_idx[:top_m]:
+                if apply_all:
+                    adaptive_widenings += 1
+                total_ls_applied += ls_top_m_applied
+
+                ls_improved_count = 0
+                for idx in sorted_idx[:ls_top_m_applied]:
                     improved = self.local_search_fn(solutions[idx], self.problem)
+                    before = solutions_costs[idx]
+                    after = improved.total_cost(self.problem)
                     solutions[idx] = improved
-                    solutions_costs[idx] = improved.total_cost(self.problem)
+                    solutions_costs[idx] = after
+                    if after + 1e-9 < before:
+                        ls_improved_count += 1
+            else:
+                ls_top_m_applied = 0
+                ls_improved_count = 0
 
             # Re-evaluate best after possible local search
             best_idx = int(np.argmin(solutions_costs))
@@ -116,6 +154,9 @@ class AntColony:
                 stagnation_counter = 0
             else:
                 stagnation_counter += 1
+                stagnation_iterations += 1
+                if stagnation_counter > max_stagnation:
+                    max_stagnation = stagnation_counter
 
             self._global_pheromone_update(self.global_best)
 
@@ -151,6 +192,18 @@ class AntColony:
                 f"- Best iteration: {best_it_cost:.2f} "
                 f"- Global best: {best_glb_cost:.2f}"
             )
+
+        self.ls_stats = {
+            "total_ls_applications": total_ls_applied,
+            "adaptive_widenings": adaptive_widenings,
+            "stagnation_iterations": stagnation_iterations,
+            "max_stagnation": max_stagnation,
+            "adaptive_threshold": self.adaptive_threshold,
+            "adaptive_top_m": self.adaptive_top_m,
+            "local_search_mode": self.local_search_mode,
+            "widen_rate": adaptive_widenings / max(1, self.params.n_iterations),
+            "ls_per_iter": total_ls_applied / max(1, self.params.n_iterations),
+        }
 
         return self.global_best
 
@@ -231,7 +284,7 @@ class AntColony:
         
         q = self.rng.random()
         
-        if q <= self.params.q0:
+        if q <= self.q0_current:
             # exploitation
             idx = int(np.argmax(values))
             return selected[idx]
@@ -256,7 +309,7 @@ class AntColony:
         """
         global pheromone update using the best solution found
         """
-        rho = self.params.rho
+        rho = self.rho_current
         
         # evaporation
         self.tau *= (1.0 - rho)

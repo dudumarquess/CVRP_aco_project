@@ -17,6 +17,17 @@ from .solution import Solution, two_opt_solution
 
 BEST_KNOWN_COSTS = {
     "A-n32-k5": 784.0,
+    "A-n33-k5": 661.0,
+    "A-n33-k6": 742.0,
+    "A-n34-k5": 778.0,
+    "A-n36-k5": 799.0,
+    "A-n37-k5": 669.0,
+    "A-n37-k6": 949.0,
+    "A-n38-k5": 730.0,
+    "A-n39-k5": 822.0,
+    "A-n39-k6": 831.0,
+    "A-n44-k6": 937.0,
+    "A-n45-k6": 944.0,
     "A-n80-k10": 1763.0,
 }
 
@@ -34,7 +45,14 @@ def parse_args() -> argparse.Namespace:
         "--variants",
         type=str,
         nargs="+",
-        default=["acs_baseline", "acs_cl15", "acs_cl15_ls2opt_fixed", "acs_cl15_ls2opt_adaptive"],
+        default=[
+            "acs_baseline",
+            "acs_cl15",
+            "acs_cl15_ls2opt_fixed",
+            "acs_cl15_ls2opt_adaptive",
+            "acs_cl15_ls2opt_adaptive_q0sched",
+            "acs_cl15_ls2opt_adaptive_q0rho",
+        ],
         help="Variant labels to run.",
     )
     parser.add_argument(
@@ -153,8 +171,26 @@ def configure_variant(
         ls_mode = "adaptive"
         ls_fn = two_opt_solution
         expected_k = 15
+    elif label == "acs_cl15_ls2opt_adaptive_q0sched":
+        params.candidate_list_size = 15
+        ls_mode = "adaptive"
+        ls_fn = two_opt_solution
+        params.use_q0_schedule = True
+        expected_k = 15
+    elif label == "acs_cl15_ls2opt_adaptive_q0rho":
+        params.candidate_list_size = 15
+        ls_mode = "adaptive"
+        ls_fn = two_opt_solution
+        params.use_q0_schedule = True
+        params.use_rho_adaptive = True
+        expected_k = 15
     else:
         raise ValueError(f"Unknown variant: {label}")
+
+    if "q0" in label:
+        assert params.use_q0_schedule, f"Variant {label} should enable q0 schedule"
+    if "rho" in label:
+        assert params.use_rho_adaptive, f"Variant {label} should enable rho adaptive"
 
     return params, ls_mode, ls_fn, threshold, top_m, expected_k
 
@@ -222,6 +258,7 @@ def run_single(
         "adaptive_threshold": adaptive_threshold,
         "adaptive_top_m": adaptive_top_m,
         "candidate_list_size": params.candidate_list_size,
+        "ls_stats": getattr(acs, "ls_stats", {}),
     }
 
     out_dir.mkdir(parents=True, exist_ok=True)
