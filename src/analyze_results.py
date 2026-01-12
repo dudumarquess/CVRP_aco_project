@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--aggregate_ls_stats",
         action="store_true",
-        help="Include LS stats (widen_rate, ls_per_iter) in summaries when available.",
+        help="Include LS stats (total_ls_applications, ls_per_iter) in summaries when available.",
     )
     parser.add_argument(
         "--strict",
@@ -225,7 +225,7 @@ def aggregate(runs: List[Dict], allowed_variants: List[str] | None) -> Dict[Tupl
         if not instance or not variant or best_cost is None:
             continue
         key = (instance, variant)
-        grouped.setdefault(key, {"best_cost": [], "elapsed": [], "gap": [], "count": 0, "widen_rate": [], "ls_per_iter": []})
+        grouped.setdefault(key, {"best_cost": [], "elapsed": [], "gap": [], "count": 0, "total_ls_applications": [], "ls_per_iter": []})
         grouped[key]["best_cost"].append(best_cost)
         grouped[key]["elapsed"].append(extract_elapsed(run))
         grouped[key]["count"] += 1
@@ -233,8 +233,8 @@ def aggregate(runs: List[Dict], allowed_variants: List[str] | None) -> Dict[Tupl
         if gap is not None:
             grouped[key]["gap"].append(float(gap))
         ls_stats = run.get("ls_stats") or {}
-        if "widen_rate" in ls_stats:
-            grouped[key]["widen_rate"].append(float(ls_stats.get("widen_rate", 0.0)))
+        if "total_ls_applications" in ls_stats:
+            grouped[key]["total_ls_applications"].append(float(ls_stats.get("total_ls_applications", 0.0)))
         if "ls_per_iter" in ls_stats:
             grouped[key]["ls_per_iter"].append(float(ls_stats.get("ls_per_iter", 0.0)))
     return grouped
@@ -315,19 +315,12 @@ def write_long_csv(runs: List[Dict], path: Path, allowed_variants: List[str] | N
         "n_routes",
         "candidate_list_size",
         "ls_mode",
-        "adaptive_threshold",
-        "adaptive_top_m",
         "total_ls_applications",
-        "adaptive_widenings",
-        "widen_rate",
         "ls_per_iter",
-        "max_stagnation",
         "use_q0_schedule",
         "q0_min",
         "q0_max",
-        "use_rho_adaptive",
         "rho",
-        "rho_max",
         "best_known",
     ]
     rows = []
@@ -355,27 +348,20 @@ def write_long_csv(runs: List[Dict], path: Path, allowed_variants: List[str] | N
             "n_routes": run.get("n_routes", run.get("final", {}).get("n_routes") if isinstance(run.get("final"), dict) else ""),
             "candidate_list_size": run.get("candidate_list_size", run.get("params", {}).get("candidate_list_size") if isinstance(run.get("params"), dict) else ""),
             "ls_mode": run.get("ls_mode", ""),
-            "adaptive_threshold": run.get("adaptive_threshold", ""),
-            "adaptive_top_m": run.get("adaptive_top_m", ""),
             "total_ls_applications": "",
-            "adaptive_widenings": "",
-            "widen_rate": "",
             "ls_per_iter": "",
-            "max_stagnation": "",
             "use_q0_schedule": "",
             "q0_min": "",
             "q0_max": "",
-            "use_rho_adaptive": "",
             "rho": "",
-            "rho_max": "",
             "best_known": "",
         }
         ls_stats = run.get("ls_stats") or {}
-        for key in ["total_ls_applications", "adaptive_widenings", "widen_rate", "ls_per_iter", "max_stagnation"]:
+        for key in ["total_ls_applications", "ls_per_iter"]:
             if key in ls_stats:
                 row[key] = ls_stats.get(key, "")
         params = run.get("params") or {}
-        for key in ["use_q0_schedule", "q0_min", "q0_max", "use_rho_adaptive", "rho", "rho_max"]:
+        for key in ["use_q0_schedule", "q0_min", "q0_max", "rho"]:
             if key in params:
                 row[key] = params.get(key, "")
         if "best_known" in run:
@@ -412,7 +398,7 @@ def write_csv(summary: Dict[Tuple[str, str], Dict], path: Path, include_ls: bool
         "gap_n",
     ]
     if include_ls:
-        fieldnames.extend(["widen_rate_mean", "ls_per_iter_mean"])
+        fieldnames.extend(["total_ls_applications_mean", "ls_per_iter_mean"])
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -443,10 +429,10 @@ def write_csv(summary: Dict[Tuple[str, str], Dict], path: Path, include_ls: bool
                 row["gap_median"] = gap_stats["median"]
                 row["gap_n"] = len(metrics["gap"])
             if include_ls:
-                if metrics["widen_rate"]:
-                    row["widen_rate_mean"] = compute_stats(metrics["widen_rate"])["mean"]
+                if metrics["total_ls_applications"]:
+                    row["total_ls_applications_mean"] = compute_stats(metrics["total_ls_applications"])["mean"]
                 else:
-                    row["widen_rate_mean"] = ""
+                    row["total_ls_applications_mean"] = ""
                 if metrics["ls_per_iter"]:
                     row["ls_per_iter_mean"] = compute_stats(metrics["ls_per_iter"])["mean"]
                 else:
@@ -457,7 +443,7 @@ def write_csv(summary: Dict[Tuple[str, str], Dict], path: Path, include_ls: bool
 def write_md(summary: Dict[Tuple[str, str], Dict], path: Path, include_ls: bool) -> None:
     headers = ["instance", "variant", "n", "best_mean", "best_std", "best_median", "best_min", "best_max", "time_mean", "time_std", "gap_mean", "gap_median"]
     if include_ls:
-        headers.extend(["widen_rate_mean", "ls_per_iter_mean"])
+        headers.extend(["total_ls_applications_mean", "ls_per_iter_mean"])
     lines = []
     lines.append("| " + " | ".join(headers) + " |")
     lines.append("|" + "|".join(["---"] * len(headers)) + "|")
@@ -484,8 +470,8 @@ def write_md(summary: Dict[Tuple[str, str], Dict], path: Path, include_ls: bool)
             gap_median,
         ]
         if include_ls:
-            if metrics["widen_rate"]:
-                row.append(f"{compute_stats(metrics['widen_rate'])['mean']:.4f}")
+            if metrics["total_ls_applications"]:
+                row.append(f"{compute_stats(metrics['total_ls_applications'])['mean']:.4f}")
             else:
                 row.append("-")
             if metrics["ls_per_iter"]:

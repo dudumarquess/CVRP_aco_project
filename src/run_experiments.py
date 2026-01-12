@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+# Example:
+# python -m src.run_experiments --instances_glob "data/*.vrp" \
+#   --variants acs_nocl_2opt_q0sched acs_clsqrtn_2opt_q0sched \
+#   --seeds 0:29 --n_iterations 30 --n_ants 10 --out_dir results
+
 import argparse
 import hashlib
 import json
+import math
 import time
 from dataclasses import replace
+from glob import glob
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -42,6 +49,13 @@ def parse_args() -> argparse.Namespace:
         help="List of VRPLIB instance paths.",
     )
     parser.add_argument(
+        "--instances_glob",
+        type=str,
+        nargs="*",
+        default=None,
+        help='Glob(s) of instance paths, relative to repo root (e.g., "data/A/*.vrp").',
+    )
+    parser.add_argument(
         "--variants",
         type=str,
         nargs="+",
@@ -49,9 +63,14 @@ def parse_args() -> argparse.Namespace:
             "acs_baseline",
             "acs_cl15",
             "acs_cl15_ls2opt_fixed",
-            "acs_cl15_ls2opt_adaptive",
-            "acs_cl15_ls2opt_adaptive_q0sched",
-            "acs_cl15_ls2opt_adaptive_q0rho",
+            "acs_cl15_ls2opt_fixed_q0sched",
+            "acs_nocl_q0sched",
+            "acs_nocl_2opt",
+            "acs_nocl_2opt_q0sched",
+            "acs_clsqrtn_none",
+            "acs_clsqrtn_q0sched",
+            "acs_clsqrtn_2opt",
+            "acs_clsqrtn_2opt_q0sched",
         ],
         help="Variant labels to run.",
     )
@@ -78,18 +97,6 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=10,
         help="Override ACS number of ants.",
-    )
-    parser.add_argument(
-        "--stagnation_threshold",
-        type=int,
-        default=10,
-        help="Adaptive LS: iterations without improvement before widening LS.",
-    )
-    parser.add_argument(
-        "--adaptive_top_m",
-        type=int,
-        default=3,
-        help="Adaptive LS: how many top solutions to improve when stagnant.",
     )
     return parser.parse_args()
 
@@ -146,53 +153,77 @@ def configure_variant(
     label: str,
     base_params: ACSParams,
     args: argparse.Namespace,
-) -> Tuple[ACSParams, str, Optional[callable], int, int, int]:
-    """Returns params, ls_mode, ls_fn, adaptive_threshold, adaptive_top_m, expected_k."""
+) -> Tuple[ACSParams, str, Optional[callable], int]:
+    """Returns params, ls_mode, ls_fn, expected_k."""
     params = replace(base_params)
     ls_mode = "none"
     ls_fn = None
-    threshold = args.stagnation_threshold
-    top_m = args.adaptive_top_m
     expected_k = params.candidate_list_size
 
     if label == "acs_baseline":
+        params.candidate_list_mode = "none"
         params.candidate_list_size = 0
         expected_k = 0
     elif label == "acs_cl15":
+        params.candidate_list_mode = "fixed"
         params.candidate_list_size = 15
         expected_k = 15
     elif label == "acs_cl15_ls2opt_fixed":
+        params.candidate_list_mode = "fixed"
         params.candidate_list_size = 15
         ls_mode = "best"
         ls_fn = two_opt_solution
         expected_k = 15
-    elif label == "acs_cl15_ls2opt_adaptive":
+    elif label == "acs_cl15_ls2opt_fixed_q0sched":
+        params.candidate_list_mode = "fixed"
         params.candidate_list_size = 15
-        ls_mode = "adaptive"
-        ls_fn = two_opt_solution
-        expected_k = 15
-    elif label == "acs_cl15_ls2opt_adaptive_q0sched":
-        params.candidate_list_size = 15
-        ls_mode = "adaptive"
+        ls_mode = "best"
         ls_fn = two_opt_solution
         params.use_q0_schedule = True
         expected_k = 15
-    elif label == "acs_cl15_ls2opt_adaptive_q0rho":
-        params.candidate_list_size = 15
-        ls_mode = "adaptive"
+    elif label == "acs_nocl_q0sched":
+        params.candidate_list_mode = "none"
+        params.candidate_list_size = 0
+        params.use_q0_schedule = True
+        expected_k = 0
+    elif label == "acs_nocl_2opt":
+        params.candidate_list_mode = "none"
+        params.candidate_list_size = 0
+        ls_mode = "best"
+        ls_fn = two_opt_solution
+        expected_k = 0
+    elif label == "acs_nocl_2opt_q0sched":
+        params.candidate_list_mode = "none"
+        params.candidate_list_size = 0
+        ls_mode = "best"
         ls_fn = two_opt_solution
         params.use_q0_schedule = True
-        params.use_rho_adaptive = True
-        expected_k = 15
+        expected_k = 0
+    elif label == "acs_clsqrtn_none":
+        params.candidate_list_mode = "sqrt"
+    elif label == "acs_clsqrtn_q0sched":
+        params.candidate_list_mode = "sqrt"
+        params.use_q0_schedule = True
+    elif label == "acs_clsqrtn_2opt":
+        params.candidate_list_mode = "sqrt"
+        ls_mode = "best"
+        ls_fn = two_opt_solution
+    elif label == "acs_clsqrtn_2opt_q0sched":
+        params.candidate_list_mode = "sqrt"
+        ls_mode = "best"
+        ls_fn = two_opt_solution
+        params.use_q0_schedule = True
     else:
         raise ValueError(f"Unknown variant: {label}")
 
     if "q0" in label:
         assert params.use_q0_schedule, f"Variant {label} should enable q0 schedule"
-    if "rho" in label:
-        assert params.use_rho_adaptive, f"Variant {label} should enable rho adaptive"
+    if "nocl" in label:
+        assert params.candidate_list_mode == "none", f"Variant {label} should disable candidate list"
+    if "clsqrtn" in label:
+        assert params.candidate_list_mode == "sqrt", f"Variant {label} should use sqrt candidate list"
 
-    return params, ls_mode, ls_fn, threshold, top_m, expected_k
+    return params, ls_mode, ls_fn, expected_k
 
 
 def run_single(
@@ -208,8 +239,6 @@ def run_single(
     git_commit: Optional[str],
     ls_mode: str,
     ls_fn,
-    adaptive_threshold: int,
-    adaptive_top_m: int,
 ) -> Dict[str, object]:
     assert params.candidate_list_size == params.candidate_list_size, "Params mutated unexpectedly."
 
@@ -220,8 +249,6 @@ def run_single(
         seed=seed,
         local_search_fn=ls_fn,
         local_search_mode=ls_mode,
-        adaptive_threshold=adaptive_threshold,
-        adaptive_top_m=adaptive_top_m,
     )
 
     start = time.perf_counter()
@@ -255,9 +282,9 @@ def run_single(
         "feasible": feasible,
         "git_commit": git_commit,
         "ls_mode": ls_mode,
-        "adaptive_threshold": adaptive_threshold,
-        "adaptive_top_m": adaptive_top_m,
         "candidate_list_size": params.candidate_list_size,
+        "candidate_list_mode": params.candidate_list_mode,
+        "candidate_list_k_effective": acs.candidate_list_k_effective,
         "ls_stats": getattr(acs, "ls_stats", {}),
     }
 
@@ -283,12 +310,26 @@ def main() -> None:
     if not out_root.is_absolute():
         out_root = base_dir / out_root
 
+    instance_paths: List[Path] = []
+    if args.instances:
+        instance_paths.extend(Path(p) for p in args.instances)
+    if args.instances_glob:
+        for pattern in args.instances_glob:
+            full_pattern = str(base_dir / pattern) if not Path(pattern).is_absolute() else pattern
+            instance_paths.extend(Path(p) for p in glob(full_pattern))
+
+    if not instance_paths:
+        instance_paths = [base_dir / "data" / "A-n32-k5.vrp"]
+
+    resolved = {}
+    for p in instance_paths:
+        path = p if p.is_absolute() else (base_dir / p)
+        resolved[str(path.resolve())] = path.resolve()
+    instance_paths = [resolved[k] for k in sorted(resolved.keys())]
+
     git_commit = get_git_commit(base_dir)
 
-    for instance in args.instances:
-        instance_path = Path(instance)
-        if not instance_path.is_absolute():
-            instance_path = base_dir / instance_path
+    for instance_path in instance_paths:
         if not instance_path.exists():
             raise FileNotFoundError(f"Instance not found: {instance_path}")
 
@@ -306,12 +347,25 @@ def main() -> None:
         )
 
         for variant in args.variants:
-            params, ls_mode, ls_fn, thr, top_m, expected_k = configure_variant(variant, base_params, args)
+            params, ls_mode, ls_fn, expected_k = configure_variant(variant, base_params, args)
             assert params.candidate_list_size == expected_k, (
                 f"Variant {variant} expected candidate_list_size {expected_k}, "
                 f"got {params.candidate_list_size}"
             )
-            print(f"- Variant: {variant} | seeds: {seeds}")
+            k_effective = 0
+            mode = (params.candidate_list_mode or "fixed").lower()
+            if mode == "none":
+                k_effective = 0
+            elif mode == "fixed":
+                k_effective = max(0, int(params.candidate_list_size))
+            elif mode == "sqrt":
+                k_effective = int(math.ceil(math.sqrt(max(1, problem.n_customers))))
+                k_effective = max(1, k_effective)
+            print(
+                f"- Variant: {variant} | seeds: {seeds} | mode={mode} "
+                f"| k_effective={k_effective} | ls_mode={ls_mode} "
+                f"| q0_schedule={params.use_q0_schedule}"
+            )
 
             variant_dir = out_root / instance_name / variant
 
@@ -329,8 +383,6 @@ def main() -> None:
                     git_commit=git_commit,
                     ls_mode=ls_mode,
                     ls_fn=ls_fn,
-                    adaptive_threshold=thr,
-                    adaptive_top_m=top_m,
                 )
                 print(
                     f"  seed {seed:>3} -> cost {result['best_cost']:.2f}, "

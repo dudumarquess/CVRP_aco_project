@@ -50,7 +50,7 @@ def parse_args() -> argparse.Namespace:
         "--variant",
         type=str,
         default="baseline",
-        help='Variant tag for logging (e.g., "baseline", "ls_fixed", "ls_adaptive").',
+        help='Variant tag for logging (e.g., "baseline", "ls_fixed").',
     )
     return parser.parse_args()
 

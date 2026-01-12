@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import List, Optional, Callable, Dict, Any
 
 import numpy as np
@@ -18,17 +19,15 @@ class ACSParams:
     n_ants: int = 10
     n_iterations: int = 100
     alpha: float = 1.0          # pheromone importance
-    beta: float = 2.0           # heuristic importance
+    beta: float = 2.3           # heuristic importance
     rho: float = 0.1            # pheromone evaporation rate
-    xi: float = 0.1             # local pheromone decay coefficient
     q0: float = 0.9             # probability of exploitation vs exploration
     tau0: float = 0.01          # initial pheromone level
+    candidate_list_mode: str = "fixed"  # "none", "fixed", "sqrt"
     candidate_list_size: int = 15  # k-nearest neighbors considered when selecting next node
     use_q0_schedule: bool = False
     q0_min: float = 0.7
     q0_max: float = 0.95
-    use_rho_adaptive: bool = False
-    rho_max: float = 0.2  # upper bound for adaptive evaporation
     
 class AntColony:
     def __init__(
@@ -38,9 +37,7 @@ class AntColony:
         observer: Optional[Observer] = None,
         seed: int = 42,
         local_search_fn: Optional[Callable[[Solution, CVRPProblem], Solution]] = None,
-        local_search_mode: str = "none",  # "none", "best", "adaptive"
-        adaptive_threshold: int = 10,
-        adaptive_top_m: int = 3,
+        local_search_mode: str = "none",  # "none", "best"
     ):
         self.problem = problem
         self.params = params
@@ -48,13 +45,11 @@ class AntColony:
         self.best_history: List[float] = []
         self.pheromone_history: List[Dict[str, float]] = []
         self.candidate_list: List[List[int]] = []
+        self.candidate_list_k_effective = 0
         self.local_search_fn = local_search_fn
         self.local_search_mode = local_search_mode
-        self.adaptive_threshold = adaptive_threshold
-        self.adaptive_top_m = adaptive_top_m
         self.ls_stats: Dict[str, float | int] = {}
         self.q0_current = params.q0
-        self.rho_current = params.rho
         
         n = problem.n_nodes()
         
@@ -71,7 +66,18 @@ class AntColony:
         self.global_best: Optional[Solution] = None
 
         # precompute per-node candidate lists (k-nearest neighbors)
-        k = max(0, int(self.params.candidate_list_size))
+        mode = (self.params.candidate_list_mode or "fixed").lower()
+        if mode == "none":
+            k = 0
+        elif mode == "fixed":
+            k = max(0, int(self.params.candidate_list_size))
+        elif mode == "sqrt":
+            k = int(math.ceil(math.sqrt(max(1, self.problem.n_customers))))
+            k = max(1, k)
+        else:
+            raise ValueError(f"Unknown candidate_list_mode: {self.params.candidate_list_mode}")
+
+        self.candidate_list_k_effective = k
         if k > 0:
             self.candidate_list = []
             for i in range(n):
@@ -87,26 +93,15 @@ class AntColony:
     def run(self) -> Solution:
         self.best_history = []
         self.pheromone_history = []
-        stagnation_counter = 0
-        adaptive_widenings = 0
         total_ls_applied = 0
-        stagnation_iterations = 0
-        max_stagnation = 0
 
         for iteration in range(self.params.n_iterations):
-            # adapt q0 and rho at iteration start
+            # adapt q0 at iteration start
             if self.params.use_q0_schedule:
                 frac = 0.0 if self.params.n_iterations <= 1 else iteration / (self.params.n_iterations - 1)
                 self.q0_current = self.params.q0_min + (self.params.q0_max - self.params.q0_min) * frac
             else:
                 self.q0_current = self.params.q0
-
-            if self.params.use_rho_adaptive:
-                thr = max(1, self.adaptive_threshold)
-                scale = min(1.0, stagnation_counter / thr)
-                self.rho_current = self.params.rho + (self.params.rho_max - self.params.rho) * scale
-            else:
-                self.rho_current = self.params.rho
 
             solutions: List[Solution] = []
             solutions_costs: List[float] = []
@@ -116,47 +111,22 @@ class AntColony:
                 solutions.append(sol)
                 solutions_costs.append(sol.total_cost(self.problem))
 
-            # Local search (optional) on selected solutions
-            if self.local_search_fn is not None and self.local_search_mode != "none":
-                sorted_idx = list(np.argsort(solutions_costs))
-                apply_all = (
-                    self.local_search_mode == "adaptive"
-                    and stagnation_counter >= self.adaptive_threshold
-                )
-                ls_top_m_applied = self.adaptive_top_m if apply_all else 1
-                ls_top_m_applied = max(1, min(ls_top_m_applied, len(sorted_idx)))
-
-                if apply_all:
-                    adaptive_widenings += 1
-                total_ls_applied += ls_top_m_applied
-
-                ls_improved_count = 0
-                for idx in sorted_idx[:ls_top_m_applied]:
-                    improved = self.local_search_fn(solutions[idx], self.problem)
-                    before = solutions_costs[idx]
-                    after = improved.total_cost(self.problem)
-                    solutions[idx] = improved
-                    solutions_costs[idx] = after
-                    if after + 1e-9 < before:
-                        ls_improved_count += 1
-            else:
-                ls_top_m_applied = 0
-                ls_improved_count = 0
+            # Local search (optional) on the best solution of the iteration
+            if self.local_search_fn is not None and self.local_search_mode == "best":
+                best_idx = int(np.argmin(solutions_costs))
+                improved = self.local_search_fn(solutions[best_idx], self.problem)
+                improved_cost = improved.total_cost(self.problem)
+                solutions[best_idx] = improved
+                solutions_costs[best_idx] = improved_cost
+                total_ls_applied += 1
 
             # Re-evaluate best after possible local search
             best_idx = int(np.argmin(solutions_costs))
             best_iteration = solutions[best_idx]
             best_iteration_cost = solutions_costs[best_idx]
 
-            if (self.global_best is None or best_iteration_cost <
-                self.global_best.total_cost(self.problem)):
+            if self.global_best is None or best_iteration_cost < self.global_best.total_cost(self.problem):
                 self.global_best = best_iteration
-                stagnation_counter = 0
-            else:
-                stagnation_counter += 1
-                stagnation_iterations += 1
-                if stagnation_counter > max_stagnation:
-                    max_stagnation = stagnation_counter
 
             self._global_pheromone_update(self.global_best)
 
@@ -195,13 +165,7 @@ class AntColony:
 
         self.ls_stats = {
             "total_ls_applications": total_ls_applied,
-            "adaptive_widenings": adaptive_widenings,
-            "stagnation_iterations": stagnation_iterations,
-            "max_stagnation": max_stagnation,
-            "adaptive_threshold": self.adaptive_threshold,
-            "adaptive_top_m": self.adaptive_top_m,
             "local_search_mode": self.local_search_mode,
-            "widen_rate": adaptive_widenings / max(1, self.params.n_iterations),
             "ls_per_iter": total_ls_applied / max(1, self.params.n_iterations),
         }
 
@@ -297,19 +261,18 @@ class AntColony:
     def _local_pheromone_update(self, i: int, j: int) -> None:
         """
         local pheromone update after an ant moves from i to j
-        tau(i,j) = (1 - xi) * tau(i,j) + xi * tau0
+        tau(i,j) = (1 - rho) * tau(i,j) + rho * tau0
         """
-        xi = self.params.xi
+        rho = self.params.rho
         tau0 = self.params.tau0
-        
-        self.tau[i, j] = (1.0 - xi) * self.tau[i, j] + xi * tau0
+        self.tau[i, j] = (1.0 - rho) * self.tau[i, j] + rho * tau0
         self.tau[j, i] = self.tau[i, j]  # symmetric graph
         
     def _global_pheromone_update(self, best_solution: Solution) -> None:
         """
         global pheromone update using the best solution found
         """
-        rho = self.rho_current
+        rho = self.params.rho
         
         # evaporation
         self.tau *= (1.0 - rho)
