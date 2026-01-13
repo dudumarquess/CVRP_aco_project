@@ -17,7 +17,7 @@ class ACSParams:
     Parameters for the Ant Colony System (ACS) for CVRP.
     """
     n_ants: int = 10
-    n_iterations: int = 100
+    n_iterations: int = 30
     alpha: float = 1.0          # pheromone importance
     beta: float = 2.3           # heuristic importance
     rho: float = 0.1            # pheromone evaporation rate
@@ -151,7 +151,6 @@ class AntColony:
                     "best_iteration_cost": best_it_cost,
                     "global_best_cost": best_glb_cost,
                     "global_best_solution": self.global_best,  # snapshot
-                    # opcional: resumo do tau pra não mandar matriz gigante
                     "tau_mean": tau_mean,
                     "tau_max": tau_max,
                     "concentration": concentration,

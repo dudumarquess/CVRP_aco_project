@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import sys
+from itertools import cycle
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -489,6 +490,15 @@ def plot_convergence(summary_runs: List[Dict], instance: str, out_path: Path, al
         print("matplotlib not available; skipping convergence plot.")
         return
 
+    variant_label_map = {
+        "acs_baseline": "baseline",
+        "acs_cl15": "CL15",
+        "acs_cl15_ls2opt_fixed": "CL15+2opt",
+        "acs_cl15_ls2opt_fixed_q0sched": "CL15+2opt+q0",
+        "acs_clsqrtn_2opt_q0sched": "CL\u221an+2opt+q0",
+    }
+    plot_variants = allowed_variants
+
     target = normalize_instance(instance)
     by_variant: Dict[str, List[List[float]]] = {}
     for run in summary_runs:
@@ -496,7 +506,7 @@ def plot_convergence(summary_runs: List[Dict], instance: str, out_path: Path, al
         if inst != target:
             continue
         variant = run.get("variant") or run.get("algorithm") or "unknown"
-        if allowed_variants is not None and variant not in allowed_variants:
+        if plot_variants is not None and variant not in plot_variants:
             continue
         if variant is None:
             continue
@@ -510,7 +520,18 @@ def plot_convergence(summary_runs: List[Dict], instance: str, out_path: Path, al
         return
 
     plt.figure(figsize=(8, 5))
-    for variant in sorted(by_variant.keys()):
+    style_defs = [
+        {"linestyle": "-", "marker": "o"},
+        {"linestyle": "--", "marker": "s"},
+        {"linestyle": "-.", "marker": "D"},
+        {"linestyle": ":", "marker": "^"},
+        {"linestyle": (0, (5, 1)), "marker": "v"},
+        {"linestyle": (0, (3, 1, 1, 1)), "marker": "P"},
+    ]
+    plot_order = [v for v in plot_variants if v in by_variant] if plot_variants else sorted(by_variant.keys())
+    style_iter = cycle(style_defs)
+    style_map = {variant: next(style_iter) for variant in plot_order}
+    for variant in plot_order:
         histories = by_variant[variant]
         if not histories:
             continue
@@ -521,15 +542,27 @@ def plot_convergence(summary_runs: List[Dict], instance: str, out_path: Path, al
         if min_len == 0:
             continue
         trimmed = np.array([h[:min_len] for h in histories], dtype=float)
-        mean_curve = np.mean(trimmed, axis=0)
-        std_curve = np.std(trimmed, axis=0, ddof=1 if trimmed.shape[0] > 1 else 0)
+        median_curve = np.median(trimmed, axis=0)
+        q25 = np.percentile(trimmed, 25, axis=0)
+        q75 = np.percentile(trimmed, 75, axis=0)
         iters = np.arange(1, min_len + 1)
-        plt.plot(iters, mean_curve, label=variant)
+        style = style_map[variant]
+        mark_every = max(1, min_len // 10)
+        plt.plot(
+            iters,
+            median_curve,
+            label=variant_label_map.get(variant, variant),
+            linestyle=style["linestyle"],
+            marker=style["marker"],
+            markevery=mark_every,
+            linewidth=1.6,
+            markersize=4,
+        )
         if trimmed.shape[0] > 1:
-            plt.fill_between(iters, mean_curve - std_curve, mean_curve + std_curve, alpha=0.2)
+            plt.fill_between(iters, q25, q75, alpha=0.2)
 
     plt.xlabel("Iteration")
-    plt.ylabel("Global best cost (mean)")
+    plt.ylabel("Global best cost (median)")
     plt.title(f"Convergence - {instance}")
     plt.grid(True)
     plt.legend()
@@ -678,7 +711,59 @@ def friedman_posthoc(
     }
 
 
-def write_stats_report(stats_res: Dict[str, object], path: Path, alpha: float) -> None:
+def compute_variant_aggregates_for_table1(
+    runs: List[Dict],
+    variants: List[str],
+) -> Dict[str, Dict[str, float | None]]:
+    costs: Dict[Tuple[str, str], List[float]] = {}
+    times: Dict[Tuple[str, str], List[float]] = {}
+    for run in runs:
+        inst = normalize_instance(run.get("instance_name") or run.get("instance") or run.get("problem_file"))
+        if not inst:
+            continue
+        variant = run.get("variant") or run.get("algorithm") or "unknown"
+        if variant not in variants:
+            continue
+        bc = extract_best_cost(run)
+        if bc is not None:
+            costs.setdefault((inst, variant), []).append(bc)
+        elapsed = extract_elapsed(run)
+        if elapsed is not None:
+            times.setdefault((inst, variant), []).append(elapsed)
+
+    inst_cost_median: Dict[Tuple[str, str], float] = {}
+    inst_time_mean: Dict[Tuple[str, str], float] = {}
+    for key, vals in costs.items():
+        if vals:
+            inst_cost_median[key] = float(np.median(vals))
+    for key, vals in times.items():
+        if vals:
+            inst_time_mean[key] = float(np.mean(vals))
+
+    aggregates: Dict[str, Dict[str, float | None]] = {}
+    for variant in variants:
+        a_costs = [
+            v for (inst, var), v in inst_cost_median.items() if var == variant and inst.startswith("A-")
+        ]
+        x_costs = [
+            v for (inst, var), v in inst_cost_median.items() if var == variant and inst.startswith("X-")
+        ]
+        a_times = [
+            v for (inst, var), v in inst_time_mean.items() if var == variant and inst.startswith("A-")
+        ]
+        x_times = [
+            v for (inst, var), v in inst_time_mean.items() if var == variant and inst.startswith("X-")
+        ]
+        aggregates[variant] = {
+            "TimeA": float(np.mean(a_times)) if a_times else None,
+            "TimeX": float(np.mean(x_times)) if x_times else None,
+            "CostA": float(np.median(a_costs)) if a_costs else None,
+            "CostX": float(np.median(x_costs)) if x_costs else None,
+        }
+    return aggregates
+
+
+def write_stats_report(stats_res: Dict[str, object], path: Path, alpha: float, runs: List[Dict]) -> None:
     lines = []
     if "error" in stats_res:
         lines.append(f"Stats error: {stats_res['error']}")
@@ -712,6 +797,41 @@ def write_stats_report(stats_res: Dict[str, object], path: Path, alpha: float) -
             lines.append(f"| {v} | {p:.4g} | {adj:.4g} | {sig} |")
     else:
         lines.append("No significant result or post-hoc not run.")
+    lines.append("")
+    lines.append("### Aggregate Summary (Table 1)")
+    lines.append("| Variant | Rank | Holm | Time A (s) | Time X (s) | CostA | CostX |")
+    lines.append("|---|---:|:---:|---:|---:|---:|---:|")
+    variants = stats_res["variants"]
+    avg_ranks = stats_res["avg_ranks"]
+    posthoc_adjusted = post.get("adjusted", {})
+    control = post.get("control")
+    if not control and variants:
+        control = min(avg_ranks.items(), key=lambda kv: kv[1])[0]
+    aggregates = compute_variant_aggregates_for_table1(runs, variants)
+    for v in sorted(variants, key=lambda name: avg_ranks[name]):
+        rank = avg_ranks[v]
+        if control and v == control:
+            holm = "–"
+        elif posthoc_adjusted:
+            holm = "yes" if posthoc_adjusted.get(v, 1.0) < alpha else "no"
+        else:
+            holm = "no"
+        agg = aggregates.get(v, {})
+        time_a = agg.get("TimeA")
+        time_x = agg.get("TimeX")
+        cost_a = agg.get("CostA")
+        cost_x = agg.get("CostX")
+        lines.append(
+            "| {variant} | {rank:.3f} | {holm} | {time_a} | {time_x} | {cost_a} | {cost_x} |".format(
+                variant=v,
+                rank=rank,
+                holm=holm,
+                time_a="-" if time_a is None else f"{time_a:.3f}",
+                time_x="-" if time_x is None else f"{time_x:.3f}",
+                cost_a="-" if cost_a is None else f"{cost_a:.2f}",
+                cost_x="-" if cost_x is None else f"{cost_x:.2f}",
+            )
+        )
     path.write_text("\n".join(lines))
 
 
@@ -727,21 +847,66 @@ def plot_cd_diagram(stats_res: Dict[str, object], out_path: Path, alpha: float) 
     if len(variants) < 2 or not stats_res["instances"]:
         return
     ranks = stats_res["avg_ranks"]
-    # simple line plot of ranks with control highlight if any
-    ctrl = stats_res.get("posthoc", {}).get("control")
+    variant_label_map = {
+        "acs_baseline": "base",
+        "acs_cl15": "cl15",
+        "acs_cl15_ls2opt_fixed": "cl15+2opt",
+        "acs_cl15_ls2opt_fixed_q0sched": "cl15+2opt+q0",
+        "acs_clsqrtn_2opt_q0sched": "clsqrt+2opt+q0",
+        "acs_nocl_2opt_q0sched": "nocl+2opt+q0",
+    }
+    variant_full_label_map = {short: full for full, short in variant_label_map.items()}
+    sig = stats_res.get("posthoc", {}).get("adjusted", {})
     xs = [ranks[v] for v in variants]
-    ys = [0] * len(variants)
-    plt.figure(figsize=(12, 3))
-    plt.hlines(0, min(xs) - 0.5, max(xs) + 0.5, colors="k", linewidth=1)
-    for v, x in sorted(ranks.items(), key=lambda kv: kv[1]):
-        color = "tab:red" if ctrl and v != ctrl and stats_res.get("posthoc", {}).get("adjusted", {}).get(v, 1.0) < alpha else "tab:blue"
-        plt.plot(x, 0, "o", color=color)
-        plt.text(x, 0.05, v, ha="center", va="bottom", rotation=45, fontsize=9)
-    plt.xlabel("Average rank (lower is better)")
+    plt.figure(figsize=(12, 3.8))
+    plt.hlines(0, min(xs) - 0.5, max(xs) + 0.5, colors="k", linewidth=2)
+
+    sorted_items = sorted(ranks.items(), key=lambda kv: kv[1])
+    median_rank = float(np.median(xs))
+    legend_handles = []
+    marker_cycle = ["o", "s", "^", "D", "P", "X", "v"]
+    color_cycle = ["#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e", "#e6ab02", "#a6761d"]
+    for idx, (v, x) in enumerate(sorted_items):
+        is_best = x <= median_rank
+        is_sig = sig.get(v, 1.0) < alpha
+        marker = marker_cycle[idx % len(marker_cycle)]
+        color = color_cycle[idx % len(color_cycle)]
+        face = color if is_best else "white"
+        edge = color
+        edge_w = 2.0 if is_sig else 1.4
+        plt.scatter(
+            [x],
+            [0],
+            s=85,
+            marker=marker,
+            facecolors=face,
+            edgecolors=edge,
+            linewidths=edge_w,
+            zorder=3,
+        )
+        label = variant_label_map.get(v, v)
+        legend_handles.append(
+            plt.Line2D(
+                [0],
+                [0],
+                marker=marker,
+                linestyle="None",
+                markerfacecolor=face,
+                markeredgecolor=edge,
+                markeredgewidth=edge_w,
+                markersize=8,
+                label=label,
+            )
+        )
+    plt.ylim(-0.55, 0.55)
+    plt.xlabel("Average rank (lower is better)", fontsize=11)
+    plt.xticks(fontsize=10)
     plt.yticks([])
-    plt.tight_layout()
+    plt.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, 1.25), ncol=3, fontsize=10, frameon=False)
+    plt.tight_layout(pad=0.8)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.savefig(out_path)
+    plt.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.savefig(out_path.with_suffix(".pdf"), bbox_inches="tight")
     plt.close()
     print(f"CD diagram saved to: {out_path}")
 
@@ -790,7 +955,7 @@ def main() -> None:
                     print(f"[INFO] Ignored {cnt} infeasible runs for {inst}/{v}")
         stats_res = friedman_posthoc(instances_used, score_table, args.alpha, args.control)
         stats_path = results_dir / "stats.md"
-        write_stats_report(stats_res, stats_path, args.alpha)
+        write_stats_report(stats_res, stats_path, args.alpha, runs)
         print(f"Stats report written to: {stats_path}")
         plot_cd_diagram(stats_res, results_dir / "stats_cd.png", args.alpha)
 

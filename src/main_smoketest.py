@@ -14,14 +14,10 @@ import matplotlib.pyplot as plt
 from .aco import ACSParams, AntColony
 from .experiment_logger import save_experiment
 from .problem import CVRPProblem
+from .run_experiments import BEST_KNOWN_COSTS, configure_variant
 from .viewer import ACSLiveViewer
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
-BEST_KNOWN_COSTS = {
-    "A-n32-k5": 784.0,
-    "A-n80-k10": 1763.0,
-}
 
 MAX_PHEROMONE_POINTS = 200
 
@@ -49,8 +45,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--variant",
         type=str,
-        default="baseline",
-        help='Variant tag for logging (e.g., "baseline", "ls_fixed").',
+        default="acs_baseline",
+        choices=[
+            "baseline",
+            "acs_baseline",
+            "acs_cl15",
+            "acs_cl15_ls2opt_fixed",
+            "acs_cl15_ls2opt_fixed_q0sched",
+            "acs_nocl_q0sched",
+            "acs_nocl_2opt",
+            "acs_nocl_2opt_q0sched",
+            "acs_clsqrtn_none",
+            "acs_clsqrtn_q0sched",
+            "acs_clsqrtn_2opt",
+            "acs_clsqrtn_2opt_q0sched",
+        ],
+        help="Variant label to run.",
+    )
+    parser.add_argument(
+        "--n_iterations",
+        type=int,
+        default=30,
+        help="Override ACS iterations.",
+    )
+    parser.add_argument(
+        "--n_ants",
+        type=int,
+        default=10,
+        help="Override ACS number of ants.",
     )
     return parser.parse_args()
 
@@ -139,22 +161,25 @@ def main():
     print("Number of customers:", problem.n_customers)
     print("Capacity:", problem.capacity)
 
-    params = ACSParams(
-        n_ants=10,
-        n_iterations=30,
-        alpha=1.0,
-        beta=2.0,
-        rho=0.1,
-        xi=0.1,
-        q0=0.9,
-        tau0=0.01,
+    variant = "acs_baseline" if args.variant == "baseline" else args.variant
+    base_params = ACSParams(
+        n_ants=args.n_ants,
+        n_iterations=args.n_iterations,
     )
+    params, ls_mode, ls_fn, _ = configure_variant(variant, base_params, args)
 
     # 👇 1) cria o viewer
     viewer = ACSLiveViewer(problem, pause=0.1)
 
     # 👇 2) passa o viewer como observer
-    acs = AntColony(problem, params, observer=viewer, seed=args.seed)
+    acs = AntColony(
+        problem,
+        params,
+        observer=viewer,
+        seed=args.seed,
+        local_search_fn=ls_fn,
+        local_search_mode=ls_mode,
+    )
 
     start_time = time.perf_counter()
     best = acs.run()
@@ -190,7 +215,7 @@ def main():
         "capacity": problem.capacity,
         "seed": args.seed,
         "algorithm": args.algorithm,
-        "variant": args.variant,
+        "variant": variant,
         "params": vars(params),
         "termination_criteria": {
             "type": "fixed_iterations",
@@ -211,6 +236,10 @@ def main():
         "duplicate_customers": feasibility["duplicate_customers"],
         "python_version": platform.python_version(),
         "git_commit": git_commit,
+        "ls_mode": ls_mode,
+        "candidate_list_size": params.candidate_list_size,
+        "candidate_list_mode": params.candidate_list_mode,
+        "candidate_list_k_effective": acs.candidate_list_k_effective,
     }
     experiments_dir = BASE_DIR / "experiments"
     saved_path = save_experiment(record, experiments_dir)
